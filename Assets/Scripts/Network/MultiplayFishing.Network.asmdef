@@ -1,0 +1,17 @@
+{
+    "name": "MultiplayFishing.Network",
+    "rootNamespace": "MultiplayFishing.Network",
+    "references": [
+        "Mirror",
+        "Mirror.Components"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

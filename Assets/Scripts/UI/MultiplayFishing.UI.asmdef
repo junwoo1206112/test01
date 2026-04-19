@@ -1,0 +1,20 @@
+{
+    "name": "MultiplayFishing.UI",
+    "rootNamespace": "MultiplayFishing.UI",
+    "references": [
+        "MultiplayFishing.Network",
+        "MultiplayFishing.Gameplay",
+        "Mirror",
+        "Mirror.Components",
+        "Unity.TextMeshPro"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
