@@ -4,10 +4,8 @@ using System;
 
 namespace MultiplayFishing.Network
 {
-    public class FishingRoomManager : NetworkRoomManager
+    public class FishingRoomManager : NetworkManager
     {
-        public static new FishingRoomManager singleton => (FishingRoomManager)NetworkManager.singleton;
-
         public static event Action NetworkStateChanged;
 
         public string ModeText => mode switch
@@ -17,62 +15,57 @@ namespace MultiplayFishing.Network
             _ => "오프라인"
         };
 
-        public int ConnectedClientCount => NetworkServer.active 
-            ? NetworkServer.connections.Count 
-            : FindObjectsByType<NetworkIdentity>(FindObjectsSortMode.None).Length;
+        public int ConnectedClientCount
+        {
+            get
+            {
+                if (NetworkServer.active) return NetworkServer.connections.Count;
+                if (NetworkClient.active) return FindObjectsByType<NetworkIdentity>(FindObjectsSortMode.None).Length;
+                return 0;
+            }
+        }
 
         public override void Awake()
         {
             base.Awake();
-            
-            // 씬 이름 강제 설정 (인스펙터 설정을 덮어씁니다)
-            // 'Not in Room scene' 에러를 방지하기 위해 RoomScene을 현재 씬인 Lobby로 강제합니다.
-            offlineScene = "Lobby";
-            RoomScene = "Lobby"; 
-            GameplayScene = "Gameplay";
-
-            showRoomGUI = false;
+            // NetworkManager에는 showRoomGUI가 없으므로 해당 줄을 삭제했습니다.
         }
 
-        #region 핵심 로직 (즉시 게임 시작)
+        public override void OnStartHost() { base.OnStartHost(); NetworkStateChanged?.Invoke(); }
+        public override void OnStopHost() { base.OnStopHost(); NetworkStateChanged?.Invoke(); }
+        public override void OnStartClient() 
+        { 
+            base.OnStartClient(); 
+            NetworkStateChanged?.Invoke(); 
+        }
+        public override void OnStopClient() { base.OnStopClient(); NetworkStateChanged?.Invoke(); }
 
-        public override void OnRoomServerAddPlayer(NetworkConnectionToClient conn)
+        public override void OnServerAddPlayer(NetworkConnectionToClient conn)
         {
-            base.OnRoomServerAddPlayer(conn);
-            
-            // 플레이어가 추가되면 즉시 게임 씬으로 이동을 준비합니다.
-            // ReadyStatusChanged를 호출하여 OnRoomServerPlayersReady가 실행되게 유도합니다.
-            ReadyStatusChanged();
+            // 이미 플레이어가 있다면 생성하지 않음 (안전 장치)
+            if (conn.identity != null) return;
+
+            Transform startPos = GetStartPosition();
+            GameObject playerObj = (startPos != null)
+                ? Instantiate(playerPrefab, startPos.position, startPos.rotation)
+                : Instantiate(playerPrefab);
+
+            NetworkServer.AddPlayerForConnection(conn, playerObj);
+            Debug.Log($"[NetworkManager] 플레이어 {conn.connectionId} 입장 완료.");
         }
 
-        public override void OnRoomServerPlayersReady()
+        public override void OnClientDisconnect()
         {
-            Debug.Log($"[FishingRoomManager] 모든 플레이어 감지 - 즉시 {GameplayScene}으로 전환합니다.");
-            ServerChangeScene(GameplayScene);
+            base.OnClientDisconnect();
+            NetworkStateChanged?.Invoke();
         }
-
-        #endregion
-
-        #region 상태 알림
-
-        public override void OnRoomStartServer() { base.OnRoomStartServer(); NetworkStateChanged?.Invoke(); }
-        public override void OnRoomStopServer() { base.OnRoomStopServer(); NetworkStateChanged?.Invoke(); }
-        public override void OnRoomClientConnect() { base.OnRoomClientConnect(); NetworkStateChanged?.Invoke(); }
-        public override void OnRoomClientDisconnect() { base.OnRoomClientDisconnect(); NetworkStateChanged?.Invoke(); }
-
-        #endregion
 
         public static string GetLocalIPAddress()
         {
-            try
-            {
+            try {
                 foreach (var ip in System.Net.Dns.GetHostAddresses(System.Net.Dns.GetHostName()))
-                {
-                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    {
-                        if (!ip.ToString().StartsWith("127.")) return ip.ToString();
-                    }
-                }
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !ip.ToString().StartsWith("127.")) 
+                        return ip.ToString();
             } catch { }
             return "127.0.0.1";
         }

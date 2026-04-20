@@ -44,6 +44,7 @@ sysinfo.txt
 *.aab
 *.unitypackage
 *.app
+Builld/
 
 # JetBrains
 .idea/

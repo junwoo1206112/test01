@@ -24,4 +24,9 @@ namespace MultiplayFishing.Network
         public bool isPublic;
         public bool isInProgress;
     }
+
+    public struct PlayerNameMessage : NetworkMessage
+    {
+        public string name;
+    }
 }

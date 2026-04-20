@@ -5,36 +5,97 @@ using System.Collections;
 
 namespace MultiplayFishing.Gameplay
 {
-    /// <summary>
-    /// 플레이어의 상태를 관리하며, 소환 시 땅 박힘 현상을 방지하는 로직을 포함합니다.
-    /// </summary>
     public class FishingPlayer : NetworkBehaviour
     {
         public event Action<string> OnPlayerNameChangedEvent;
-        public event Action<int> OnScoreChangedEvent;
-        public event Action<bool> OnReadyChangedEvent;
         public event Action<Color> OnPlayerColorChangedEvent;
 
-        static readonly System.Collections.Generic.List<FishingPlayer> playersList = new System.Collections.Generic.List<FishingPlayer>();
-
-        [Header("Player Info")]
+        [Header("Player Identification")]
         [SyncVar(hook = nameof(OnPlayerNameChanged))] public string playerName = "";
-        [SyncVar(hook = nameof(OnScoreChanged))] public int score = 0;
-        [SyncVar(hook = nameof(OnReadyChanged))] public bool isReady = false;
         [SyncVar(hook = nameof(OnPlayerColorChanged))] public Color playerColor = Color.white;
 
-        [Header("References")]
+        [Header("Setup References")]
         [SerializeField] private Renderer characterRenderer;
 
-        #region Physics Escape Logic (땅 박힘 방지)
+        private void Awake()
+        {
+            // 인스펙터 할당 누락 대비
+            if (characterRenderer == null) characterRenderer = GetComponentInChildren<Renderer>();
+        }
+
+        public override void OnStartServer()
+        {
+            base.OnStartServer();
+            
+            // 이미 설정된 이름이 없다면(빈 문자열) 랜덤한 이름 부여
+            if (string.IsNullOrEmpty(playerName))
+            {
+                playerName = $"낚시꾼 {UnityEngine.Random.Range(100, 999)}";
+            }
+            
+            playerColor = Color.HSVToRGB(UnityEngine.Random.value, 0.8f, 1.0f);
+        }
+
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+            UpdateCharacterColor(playerColor);
+        }
+
+        void OnPlayerNameChanged(string oldValue, string newValue) => OnPlayerNameChangedEvent?.Invoke(newValue);
+        
+        void OnPlayerColorChanged(Color oldColor, Color newColor) 
+        { 
+            UpdateCharacterColor(newColor); 
+            OnPlayerColorChangedEvent?.Invoke(newColor); 
+        }
+
+        private void UpdateCharacterColor(Color color)
+        {
+            if (characterRenderer != null) 
+            {
+                characterRenderer.material.color = color;
+            }
+        }
 
         public override void OnStartLocalPlayer()
         {
             base.OnStartLocalPlayer();
-            Debug.Log($"[FishingPlayer] 로컬 플레이어 '{playerName}' 소환됨. 땅 박힘 방지 로직 가동.");
-            
-            // 소환 즉시 땅에서 탈출하도록 코루틴 실행
             StartCoroutine(SmartEscapeRoutine());
+            
+            // 로컬에 저장된 이름을 불러와서 서버로 전송
+            string savedName = PlayerPrefs.GetString("PlayerName", $"낚시꾼 {UnityEngine.Random.Range(100, 999)}");
+            CmdUpdatePlayerName(savedName);
+        }
+
+        [Command]
+        public void CmdUpdatePlayerName(string newName)
+        {
+            if (string.IsNullOrWhiteSpace(newName)) return;
+
+            string oldName = playerName;
+            playerName = newName;
+            Debug.Log($"[Server] 이름 변경 요청: '{oldName}' -> '{newName}'");
+
+            // 알림 조건: 이전 이름이 비어있거나, 새로 설정된 이름이 이전과 다를 때 (처음 한 번만)
+            // 중복 알림을 방지하기 위해 서버에서 체크
+            RpcBroadcastSystemMessage($"{newName}님이 입장하셨습니다.");
+            Debug.Log($"[Server] RpcBroadcastSystemMessage 호출 완료: {newName}");
+        }
+
+        [ClientRpc]
+        private void RpcBroadcastSystemMessage(string message)
+        {
+            Debug.Log($"[Client] Rpc 수신됨: {message}");
+            if (MultiplayFishing.UI.NotificationUI.Instance != null)
+            {
+                MultiplayFishing.UI.NotificationUI.Instance.ShowMessage(message);
+            }
+            else
+            {
+                // 이 로그가 뜬다면 하이어라키에 NotificationUI 오브젝트가 없는 것입니다.
+                Debug.LogError("[Client] NotificationUI 인스턴스를 찾을 수 없습니다! 하이어라키를 확인하세요.");
+            }
         }
 
         private IEnumerator SmartEscapeRoutine()
@@ -42,61 +103,11 @@ namespace MultiplayFishing.Gameplay
             CharacterController cc = GetComponent<CharacterController>();
             if (cc != null)
             {
-                // 물리 충돌을 잠시 끄고 위치를 위로 보정한 뒤 다시 켭니다.
                 cc.enabled = false;
                 transform.position += Vector3.up * 0.2f; 
                 yield return new WaitForFixedUpdate();
                 cc.enabled = true;
             }
         }
-
-        #endregion
-
-        #region Server System
-
-        public override void OnStartServer()
-        {
-            base.OnStartServer();
-            playersList.Add(this);
-            playerName = $"낚시꾼 {playersList.Count}";
-            playerColor = Color.HSVToRGB(UnityEngine.Random.value, 0.7f, 0.9f);
-        }
-
-        [Command]
-        void CmdSetPlayerName(string newName)
-        {
-            if (string.IsNullOrWhiteSpace(newName) || newName.Length > 20) return;
-            playerName = newName;
-        }
-
-        public override void OnStopServer()
-        {
-            playersList.Remove(this);
-            base.OnStopServer();
-        }
-
-        #endregion
-
-        #region Client Sync
-
-        public override void OnStartClient()
-        {
-            OnPlayerNameChangedEvent?.Invoke(playerName);
-            OnScoreChangedEvent?.Invoke(score);
-            OnReadyChangedEvent?.Invoke(isReady);
-            UpdateCharacterColor(playerColor);
-        }
-
-        void OnPlayerNameChanged(string oldValue, string newValue) => OnPlayerNameChangedEvent?.Invoke(newValue);
-        void OnScoreChanged(int oldValue, int newValue) => OnScoreChangedEvent?.Invoke(newValue);
-        void OnReadyChanged(bool oldValue, bool newValue) => OnReadyChangedEvent?.Invoke(newValue);
-        void OnPlayerColorChanged(Color oldColor, Color newColor) { UpdateCharacterColor(newColor); OnPlayerColorChangedEvent?.Invoke(newColor); }
-
-        void UpdateCharacterColor(Color color)
-        {
-            if (characterRenderer != null) characterRenderer.material.color = color;
-        }
-
-        #endregion
     }
 }
